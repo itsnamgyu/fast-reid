@@ -1,9 +1,10 @@
 #include "fastrt/model.h"
+#include "fastrt/calibrator.h"
+
 
 namespace fastrt {
 
-    Model::Model(const trt::ModelConfig &modelcfg, const FastreidConfig &reidcfg, const std::string input_name, const std::string output_name) :
-        _reidcfg(reidcfg) {
+    Model::Model(const trt::ModelConfig &modelcfg, const std::string input_name, const std::string output_name) {
         
         _engineCfg.weights_path = modelcfg.weights_path;
         _engineCfg.max_batch_size = modelcfg.max_batch_size;
@@ -57,7 +58,7 @@ namespace fastrt {
         /* Modeling */
         ILayer* output{nullptr};
         for(auto& sequential_module: modules) {
-            output = sequential_module->topology(network.get(), weightMap, *input, _reidcfg);
+            output = sequential_module->topology(network.get(), weightMap, *input);
             TRTASSERT(output);
             input = output->getOutput(0);
         }
@@ -69,9 +70,27 @@ namespace fastrt {
         /* Build engine */ 
         builder->setMaxBatchSize(_engineCfg.max_batch_size);
         config->setMaxWorkspaceSize(1 << 20);
+#if defined(BUILD_FP16) && defined(BUILD_INT8)
+        std::cout << "Flag confilct! BUILD_FP16 and BUILD_INT8 can't be both True!" << std::endl;
+        return null;
+#endif
 #ifdef BUILD_FP16
         std::cout << "[Build fp16]" << std::endl;
         config->setFlag(BuilderFlag::kFP16);
+#endif 
+#ifdef BUILD_INT8
+        std::cout << "[Build int8]" << std::endl;
+        std::cout << "Your platform support int8: " << (builder->platformHasFastInt8() ? "true" : "false") << std::endl;
+        assert(builder->platformHasFastInt8());
+        config->setFlag(BuilderFlag::kINT8);
+        int w = _engineCfg.input_w;
+        int h = _engineCfg.input_h;
+        char*p = (char*)_engineCfg.input_name.data();
+
+        //path must end with /
+        Int8EntropyCalibrator2* calibrator = new Int8EntropyCalibrator2(1, w, h, 
+            "/data/person_reid/data/Market-1501-v15.09.15/bounding_box_test/", "int8calib.table", p);
+        config->setInt8Calibrator(calibrator);
 #endif 
         auto engine = make_holder(builder->buildEngineWithConfig(*network, *config));
         std::cout << "[TRT engine build out]" << std::endl;

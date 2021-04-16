@@ -7,6 +7,10 @@
 using namespace fastrt;
 using namespace nvinfer1;
 
+#ifdef USE_CNUMPY
+#include "cnpy.h"
+#endif
+
 /* Ex1. sbs_R50-ibn */
 static const std::string WEIGHTS_PATH = "../sbs_R50-ibn.wts"; 
 static const std::string ENGINE_PATH = "./sbs_R50-ibn.engine";
@@ -48,14 +52,14 @@ int main(int argc, char** argv) {
     std::cout << "[ModelConfig]: \n" << modelCfg
         << "\n[FastreidConfig]: \n" << reidCfg << std::endl;
 
-    Baseline baseline{modelCfg, reidCfg}; 
+    Baseline baseline{modelCfg}; 
 
     if (argc == 2 && std::string(argv[1]) == "-s") {
         ModuleFactory moduleFactory;
         std::cout << "[Serializling Engine]" << std::endl;
         if (!baseline.serializeEngine(ENGINE_PATH, 
-            {std::move(moduleFactory.createBackbone(reidCfg.backbone)), 
-                std::move(moduleFactory.createHead(reidCfg.head))})) {
+            {std::move(moduleFactory.createBackbone(reidCfg)), 
+                std::move(moduleFactory.createHead(reidCfg))})) {
             std::cout << "SerializeEngine Failed." << std::endl;
             return -1;
         }   
@@ -91,6 +95,11 @@ int main(int argc, char** argv) {
 
         /* get output from cudaMallocHost */
         float* feat_embedding = baseline.getOutput();
+
+#ifdef USE_CNUMPY
+        /* save as numpy. shape = (OUTPUT_SIZE,) */
+        cnpy::npy_save("./feat_embedding.npy", feat_embedding, {OUTPUT_SIZE}, "w");
+#endif
 
         /* print output */
         TRTASSERT(feat_embedding);
